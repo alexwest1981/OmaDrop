@@ -45,11 +45,39 @@ Add `custom.omadrop` to your `bar.layout.right`:
 }
 ```
 
-### 3. Restart Omarchy Shell
+### 3. Allow OmaDrop in your Firewall (Port 5380)
+
+Linux firewalls block incoming connections from the local network by default. Allow incoming traffic on port `5380/tcp`:
+
+* **If you use UFW (Omarchy default):**
+  ```bash
+  sudo ufw allow 5380/tcp
+  ```
+
+* **If you use firewalld:**
+  ```bash
+  sudo firewall-cmd --add-port=5380/tcp --permanent
+  sudo firewall-cmd --reload
+  ```
+
+* **If you use nftables:**
+  ```bash
+  sudo nft add rule inet filter input tcp dport 5380 accept
+  ```
+
+### 4. Restart Omarchy Shell
 
 ```bash
 omarchy-restart-shell
 ```
+
+---
+
+## 🛠️ Troubleshooting & Checklist
+
+* **Same Wi-Fi Network:** Make sure your smartphone and your PC are connected to the same local Wi-Fi router (not mobile data 4G/5G).
+* **AP/Client Isolation:** Some guest Wi-Fi networks have "Client Isolation" enabled, which prevents local devices from talking to each other. Use your standard home/office Wi-Fi.
+* **Storage Location:** Received files are saved in `~/Downloads/OmaDrop/Received/`.
 
 ---
 
