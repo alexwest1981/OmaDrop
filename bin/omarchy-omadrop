@@ -16,12 +16,13 @@ import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 PORT = 5380
-DOWNLOAD_DIR = os.path.expanduser("~/Downloads/OmaDrop")
-SEND_DIR = os.path.join(DOWNLOAD_DIR, "Send")
+BASE_DIR = os.path.expanduser("~/Downloads/OmaDrop")
+RECEIVED_DIR = os.path.join(BASE_DIR, "Received")
+SEND_DIR = os.path.join(BASE_DIR, "Send")
 QR_PATH = "/tmp/omadrop-qr.png"
 PID_FILE = "/tmp/omadrop.pid"
 
-os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+os.makedirs(RECEIVED_DIR, exist_ok=True)
 os.makedirs(SEND_DIR, exist_ok=True)
 
 # ------------------------------------------------------------------------------
@@ -441,11 +442,11 @@ class OmaDropHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             recent = []
-            if os.path.exists(DOWNLOAD_DIR):
-                files = [f for f in os.listdir(DOWNLOAD_DIR) if f != "Send" and os.path.isfile(os.path.join(DOWNLOAD_DIR, f))]
-                files.sort(key=lambda x: os.path.getmtime(os.path.join(DOWNLOAD_DIR, x)), reverse=True)
+            if os.path.exists(RECEIVED_DIR):
+                files = [f for f in os.listdir(RECEIVED_DIR) if os.path.isfile(os.path.join(RECEIVED_DIR, f))]
+                files.sort(key=lambda x: os.path.getmtime(os.path.join(RECEIVED_DIR, x)), reverse=True)
                 for f in files[:5]:
-                    sz = os.path.getsize(os.path.join(DOWNLOAD_DIR, f))
+                    sz = os.path.getsize(os.path.join(RECEIVED_DIR, f))
                     sz_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.1f} MB"
                     recent.append({"name": f, "size": sz_str})
 
@@ -455,7 +456,7 @@ class OmaDropHandler(BaseHTTPRequestHandler):
                 "port": PORT,
                 "url": f"http://{get_local_ip()}:{PORT}",
                 "qr_path": QR_PATH,
-                "download_dir": DOWNLOAD_DIR,
+                "received_dir": RECEIVED_DIR,
                 "recent_files": recent
             }
             self.wfile.write(json.dumps(data).encode("utf-8"))
@@ -473,7 +474,7 @@ class OmaDropHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
 
-            saved = parse_multipart(self.rfile, content_type, content_length, DOWNLOAD_DIR)
+            saved = parse_multipart(self.rfile, content_type, content_length, RECEIVED_DIR)
 
             if saved:
                 count = len(saved)
@@ -558,11 +559,11 @@ def cmd_status():
         generate_qr(url)
 
     recent = []
-    if os.path.exists(DOWNLOAD_DIR):
-        files = [f for f in os.listdir(DOWNLOAD_DIR) if f != "Send" and os.path.isfile(os.path.join(DOWNLOAD_DIR, f))]
-        files.sort(key=lambda x: os.path.getmtime(os.path.join(DOWNLOAD_DIR, x)), reverse=True)
+    if os.path.exists(RECEIVED_DIR):
+        files = [f for f in os.listdir(RECEIVED_DIR) if os.path.isfile(os.path.join(RECEIVED_DIR, f))]
+        files.sort(key=lambda x: os.path.getmtime(os.path.join(RECEIVED_DIR, x)), reverse=True)
         for f in files[:5]:
-            sz = os.path.getsize(os.path.join(DOWNLOAD_DIR, f))
+            sz = os.path.getsize(os.path.join(RECEIVED_DIR, f))
             sz_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.1f} MB"
             recent.append({"name": f, "size": sz_str})
 
@@ -572,13 +573,13 @@ def cmd_status():
         "port": PORT,
         "url": url,
         "qr_path": QR_PATH,
-        "download_dir": DOWNLOAD_DIR,
+        "received_dir": RECEIVED_DIR,
         "recent_files": recent
     }
     print(json.dumps(data))
 
 def cmd_open():
-    subprocess.run(["xdg-open", DOWNLOAD_DIR], check=False)
+    subprocess.run(["xdg-open", RECEIVED_DIR], check=False)
 
 if __name__ == "__main__":
     action = sys.argv[1] if len(sys.argv) > 1 else "status"
