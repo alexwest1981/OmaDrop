@@ -16,6 +16,108 @@ BarWidget {
   property string qrPath: "/tmp/omadrop-qr.png"
   property int refreshTrigger: 0
 
+  // ---------------------------------------------------------------------------
+  // i18n System Language Localization Dictionary
+  // ---------------------------------------------------------------------------
+  readonly property var i18nDict: ({
+    en: {
+      tooltip: "OmaDrop (File Transfer Phone ↔ PC)\nClick to show QR code",
+      title: "OmaDrop File Sharing",
+      subtitle: "Scan with your regular phone camera",
+      copied: "Link copied to clipboard!",
+      recent_title: "📥 Recently received files:",
+      btn_open: "📁 Open folder",
+      btn_stop: "🛑 Stop",
+      btn_start: "▶ Start",
+      same_wifi: "Same Wi-Fi required"
+    },
+    sv: {
+      tooltip: "OmaDrop (Fildelning mobil ↔ dator)\nKlicka för att visa QR-kod",
+      title: "OmaDrop Fildelning",
+      subtitle: "Scanna med mobilens vanliga kamera",
+      copied: "Länk kopierad till urklipp!",
+      recent_title: "📥 Senast mottagna filer:",
+      btn_open: "📁 Öppna mapp",
+      btn_stop: "🛑 Stäng av",
+      btn_start: "▶ Starta",
+      same_wifi: "Kräver samma Wi-Fi"
+    },
+    nl: {
+      tooltip: "OmaDrop (Bestandsoverdracht Telefoon ↔ PC)\nKlik voor QR-code",
+      title: "OmaDrop Bestandsoverdracht",
+      subtitle: "Scan met de camera van je telefoon",
+      copied: "Link gekopieerd naar klembord!",
+      recent_title: "📥 Recent ontvangen bestanden:",
+      btn_open: "📁 Map openen",
+      btn_stop: "🛑 Stoppen",
+      btn_start: "▶ Starten",
+      same_wifi: "Vereist dezelfde Wi-Fi"
+    },
+    ja: {
+      tooltip: "OmaDrop (スマホ ↔ PC ファイル転送)\nクリックしてQRコードを表示",
+      title: "OmaDrop ファイル共有",
+      subtitle: "スマホの標準カメラでスキャン",
+      copied: "リンクをクリップボードにコピーしました！",
+      recent_title: "📥 最近受信したファイル:",
+      btn_open: "📁 フォルダを開く",
+      btn_stop: "🛑 停止",
+      btn_start: "▶ 開始",
+      same_wifi: "同じWi-Fi接続が必要です"
+    },
+    de: {
+      tooltip: "OmaDrop (Dateiübertragung Handy ↔ PC)\nKlicken für QR-Code",
+      title: "OmaDrop Dateifreigabe",
+      subtitle: "Mit der Handykamera scannen",
+      copied: "Link in Zwischenablage kopiert!",
+      recent_title: "📥 Zuletzt empfangene Dateien:",
+      btn_open: "📁 Ordner öffnen",
+      btn_stop: "🛑 Beenden",
+      btn_start: "▶ Starten",
+      same_wifi: "Gleiches WLAN erforderlich"
+    },
+    fr: {
+      tooltip: "OmaDrop (Transfert Téléphone ↔ PC)\nCliquer pour le code QR",
+      title: "OmaDrop Partage de fichiers",
+      subtitle: "Scannez avec l'appareil photo du téléphone",
+      copied: "Lien copié dans le presse-papiers !",
+      recent_title: "📥 Fichiers récemment reçus :",
+      btn_open: "📁 Ouvrir le dossier",
+      btn_stop: "🛑 Arrêter",
+      btn_start: "▶ Démarrer",
+      same_wifi: "Même Wi-Fi requis"
+    },
+    es: {
+      tooltip: "OmaDrop (Transferencia Móvil ↔ PC)\nHaz clic para código QR",
+      title: "OmaDrop Compartir archivos",
+      subtitle: "Escanea con la cámara de tu móvil",
+      copied: "¡Enlace copiado al portapapeles!",
+      recent_title: "📥 Archivos recibidos recientemente:",
+      btn_open: "📁 Abrir carpeta",
+      btn_stop: "🛑 Detener",
+      btn_start: "▶ Iniciar",
+      same_wifi: "Misma red Wi-Fi requerida"
+    },
+    zh: {
+      tooltip: "OmaDrop (手机 ↔ 电脑 文件传输)\n点击显示二维码",
+      title: "OmaDrop 文件传输",
+      subtitle: "使用手机相机扫码",
+      copied: "链接已复制到剪贴板！",
+      recent_title: "📥 最近接收的文件:",
+      btn_open: "📁 打开文件夹",
+      btn_stop: "🛑 停止",
+      btn_start: "▶ 启动",
+      same_wifi: "需要连接到同一 Wi-Fi"
+    }
+  })
+
+  readonly property var langKey: {
+    var loc = Qt.locale().name.toLowerCase()
+    var shortCode = loc.split("_")[0].split("-")[0]
+    return i18nDict[shortCode] ? shortCode : "en"
+  }
+
+  readonly property var str: i18nDict[langKey] || i18nDict.en
+
   function close() { popupOpen = false }
 
   implicitWidth: button.implicitWidth
@@ -66,9 +168,9 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.serverRunning ? "󰄡 Drop" : "󰄡 Drop"
+    text: "󰄡 Drop"
     active: root.popupOpen || root.serverRunning
-    tooltipText: "OmaDrop (Fildelning mobil ↔ dator)\nKlicka för att visa QR-kod"
+    tooltipText: root.str.tooltip
     onPressed: function(btn) {
       if (!root.serverRunning) {
         runOmaDrop("start")
@@ -120,7 +222,7 @@ BarWidget {
           width: parent.width - Style.space(58)
 
           Text {
-            text: "OmaDrop Fildelning"
+            text: root.str.title
             color: root.bar.foreground
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.subtitle
@@ -128,7 +230,7 @@ BarWidget {
           }
 
           Text {
-            text: "Scanna med mobilens vanliga kamera"
+            text: root.str.subtitle
             color: Qt.darker(root.bar.foreground, 1.3)
             font.family: root.bar.fontFamily
             font.pixelSize: Style.font.bodySmall
@@ -197,7 +299,7 @@ BarWidget {
               cursorShape: Qt.PointingHandCursor
               onClicked: {
                 Quickshell.execDetached(["wl-copy", root.serverUrl])
-                if (root.bar) root.bar.showTooltip(root, "Länk kopierad till urklipp!")
+                if (root.bar) root.bar.showTooltip(root, root.str.copied)
               }
             }
           }
@@ -211,7 +313,7 @@ BarWidget {
         visible: root.recentFiles.length > 0
 
         Text {
-          text: "📥 Senast mottagna filer:"
+          text: root.str.recent_title
           color: Qt.darker(root.bar.foreground, 1.3)
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.caption
@@ -270,7 +372,7 @@ BarWidget {
 
         Button {
           width: (parent.width - Style.space(8)) / 2
-          text: "📁 Öppna mapp"
+          text: root.str.btn_open
           foreground: root.bar.foreground
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY
@@ -279,7 +381,7 @@ BarWidget {
 
         Button {
           width: (parent.width - Style.space(8)) / 2
-          text: root.serverRunning ? "🛑 Stäng av" : "▶ Starta"
+          text: root.serverRunning ? root.str.btn_stop : root.str.btn_start
           foreground: root.serverRunning ? "#f7768e" : "#9ece6a"
           horizontalPadding: Style.spacing.controlPaddingX
           verticalPadding: Style.spacing.controlPaddingY

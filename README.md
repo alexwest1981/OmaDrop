@@ -12,6 +12,7 @@ Transfer photos, videos, and files between your smartphone (iPhone or Android) a
 * **🔔 Native Desktop Notifications:** Get an immediate desktop notification with sound and file count as soon as transfers complete.
 * **💻 Send from PC to Phone:** Place files in `~/Downloads/OmaDrop/Send/` and download them directly to your phone with one tap.
 * **📊 Progress & Streaming:** Real-time upload percentage, transfer speed, and recent received file list in the top bar popup.
+* **🌐 Automatic System & Browser Language (i18n):** Automatically adapts to the user's native language on both PC and mobile! Supports English, Swedish (Svenska), Dutch (Nederlands), Japanese (日本語), German (Deutsch), French (Français), Spanish (Español), and Chinese (中文).
 * **🔒 100% Local & Private:** Direct peer-to-peer over your local Wi-Fi network. No cloud, no external servers, no tracking.
 
 ---
