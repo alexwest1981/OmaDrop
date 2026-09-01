@@ -1,0 +1,452 @@
+#!/usr/bin/env python3
+# ==============================================================================
+# OmaDrop (Omarchy File Drop Daemon & CLI)
+# Part of OmaDrop - https://github.com/alexwest1981/OmaDrop
+# ==============================================================================
+
+import os
+import sys
+import re
+import time
+import socket
+import json
+import urllib.parse
+import subprocess
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+PORT = 5380
+DOWNLOAD_DIR = os.path.expanduser("~/Downloads/OmaDrop")
+SEND_DIR = os.path.join(DOWNLOAD_DIR, "Send")
+QR_PATH = "/tmp/omadrop-qr.png"
+PID_FILE = "/tmp/omadrop.pid"
+
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+os.makedirs(SEND_DIR, exist_ok=True)
+
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("1.1.1.1", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+def generate_qr(url):
+    try:
+        subprocess.run(["qrencode", "-s", "6", "-m", "2", "-o", QR_PATH, url], check=False)
+    except Exception:
+        pass
+
+def parse_multipart(rfile, content_type, content_length, save_dir):
+    m = re.search(r'boundary=(.+)', content_type)
+    if not m:
+        return []
+    boundary = m.group(1).strip('"\'').encode('utf-8')
+    delimiter = b'--' + boundary
+
+    saved_files = []
+    data = rfile.read(content_length)
+    parts = data.split(delimiter)
+
+    for part in parts:
+        if not part or part.startswith(b'--') or b'\r\n\r\n' not in part:
+            continue
+        
+        header_bytes, body = part.split(b'\r\n\r\n', 1)
+        if body.endswith(b'\r\n'):
+            body = body[:-2]
+
+        headers_str = header_bytes.decode('utf-8', errors='replace')
+        fn_match = re.search(r'filename="([^"]+)"', headers_str)
+        if fn_match:
+            filename = os.path.basename(fn_match.group(1))
+            if not filename:
+                continue
+            
+            dest_path = os.path.join(save_dir, filename)
+            counter = 1
+            base, ext = os.path.splitext(filename)
+            while os.path.exists(dest_path):
+                dest_path = os.path.join(save_dir, f"{base}_{counter}{ext}")
+                counter += 1
+
+            with open(dest_path, "wb") as f:
+                f.write(body)
+            saved_files.append(os.path.basename(dest_path))
+
+    return saved_files
+
+class OmaDropHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass # Quiet logs
+
+    def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path == "/" or parsed.path == "/index.html":
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+
+            send_files = []
+            if os.path.exists(SEND_DIR):
+                for f in os.listdir(SEND_DIR):
+                    full_p = os.path.join(SEND_DIR, f)
+                    if os.path.isfile(full_p):
+                        sz = os.path.getsize(full_p)
+                        sz_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.1f} MB"
+                        send_files.append({"name": f, "size": sz_str})
+
+            html = f"""<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OmaDrop 🚀</title>
+    <style>
+        :root {{
+            --bg: #1a1b26;
+            --card-bg: #24283b;
+            --accent: #7aa2f7;
+            --accent-glow: rgba(122, 162, 247, 0.3);
+            --success: #9ece6a;
+            --fg: #c0caf5;
+            --fg-dim: #7982a9;
+            --border: #414868;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
+        body {{
+            background: var(--bg);
+            color: var(--fg);
+            min-height: 100vh;
+            padding: 24px 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }}
+        .container {{ width: 100%; max-width: 460px; }}
+        header {{ text-align: center; margin-bottom: 24px; }}
+        h1 {{ font-size: 26px; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; }}
+        p.subtitle {{ color: var(--fg-dim); font-size: 14px; margin-top: 6px; }}
+        .card {{
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 22px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+            margin-bottom: 20px;
+        }}
+        .dropzone {{
+            border: 2px dashed var(--accent);
+            border-radius: 14px;
+            padding: 36px 16px;
+            text-align: center;
+            background: rgba(122, 162, 247, 0.06);
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }}
+        .dropzone:active {{ background: var(--accent-glow); transform: scale(0.98); }}
+        .dropzone-icon {{ font-size: 52px; margin-bottom: 12px; }}
+        .dropzone-text {{ font-size: 17px; font-weight: 700; color: #fff; }}
+        .dropzone-sub {{ font-size: 13px; color: var(--fg-dim); margin-top: 6px; }}
+        #fileInput {{ display: none; }}
+        #progressContainer {{ display: none; margin-top: 20px; }}
+        .progress-bar-bg {{ background: var(--border); height: 12px; border-radius: 6px; overflow: hidden; }}
+        .progress-bar-fill {{ background: var(--accent); height: 100%; width: 0%; transition: width 0.1s linear; }}
+        .progress-status {{ font-size: 14px; color: #fff; margin-top: 10px; text-align: center; font-weight: 600; }}
+        .file-item {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(0,0,0,0.25);
+            padding: 12px 14px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }}
+        .file-info {{ display: flex; flex-direction: column; overflow: hidden; max-width: 240px; }}
+        .file-name {{ color: #fff; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+        .file-size {{ color: var(--fg-dim); font-size: 12px; margin-top: 2px; }}
+        .dl-btn {{
+            background: var(--accent);
+            color: #1a1b26;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 700;
+            text-decoration: none;
+            flex-shrink: 0;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 OmaDrop</h1>
+            <p class="subtitle">Snabb trådlös fildelning direkt till din dator</p>
+        </header>
+
+        <div class="card">
+            <h2 style="font-size: 17px; margin-bottom: 14px; color: #fff; display: flex; align-items: center; gap: 6px;">📱 Skicka till datorn</h2>
+            <form id="uploadForm" enctype="multipart/form-data">
+                <input type="file" id="fileInput" name="files" multiple>
+                <div class="dropzone" onclick="document.getElementById('fileInput').click()">
+                    <div class="dropzone-icon">📤</div>
+                    <div class="dropzone-text">Välj foton eller filer</div>
+                    <div class="dropzone-sub">Tryck här för att ladda upp</div>
+                </div>
+            </form>
+
+            <div id="progressContainer">
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progressBar"></div>
+                </div>
+                <div class="progress-status" id="progressStatus">Startar...</div>
+            </div>
+        </div>
+
+        <div class="card" id="downloadCard" style="{'display: block;' if send_files else 'display: none;'}">
+            <h2 style="font-size: 17px; margin-bottom: 14px; color: #fff; display: flex; align-items: center; gap: 6px;">💻 Hämta från datorn</h2>
+            <div>
+                {"".join([f'''<div class="file-item"><div class="file-info"><span class="file-name">📄 {f["name"]}</span><span class="file-size">{f["size"]}</span></div><a href="/download/{urllib.parse.quote(f["name"])}" class="dl-btn" download>Ladda ner</a></div>''' for f in send_files])}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('fileInput');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressStatus = document.getElementById('progressStatus');
+
+        fileInput.addEventListener('change', () => {{
+            if (fileInput.files.length === 0) return;
+            uploadFiles(fileInput.files);
+        }});
+
+        function uploadFiles(files) {{
+            const formData = new FormData();
+            for (let i = 0; i < files.length; i++) {{
+                formData.append('files', files[i]);
+            }}
+
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressBar.style.background = 'var(--accent)';
+            progressStatus.innerText = 'Startar överföring...';
+
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+
+            xhr.upload.onprogress = (e) => {{
+                if (e.lengthComputable) {{
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    progressBar.style.width = percent + '%';
+                    const mb = (e.loaded / (1024*1024)).toFixed(1);
+                    const totalMb = (e.total / (1024*1024)).toFixed(1);
+                    progressStatus.innerText = `Laddar upp... ${{percent}}% (${{mb}} / ${{totalMb}} MB)`;
+                }}
+            }};
+
+            xhr.onload = () => {{
+                if (xhr.status === 200) {{
+                    progressBar.style.background = 'var(--success)';
+                    progressStatus.innerText = '✅ Klart! Filerna är sparade på datorn.';
+                    setTimeout(() => {{
+                        progressContainer.style.display = 'none';
+                        progressBar.style.background = 'var(--accent)';
+                    }}, 4000);
+                }} else {{
+                    progressStatus.innerText = '❌ Fel vid uppladdning.';
+                }}
+            }};
+
+            xhr.onerror = () => {{
+                progressStatus.innerText = '❌ Anslutningsfel.';
+            }};
+
+            xhr.send(formData);
+        }}
+    </script>
+</body>
+</html>"""
+            self.wfile.write(html.encode("utf-8"))
+
+        elif parsed.path.startswith("/download/"):
+            filename = urllib.parse.unquote(parsed.path[len("/download/"):])
+            safe_name = os.path.basename(filename)
+            filepath = os.path.join(SEND_DIR, safe_name)
+            if os.path.exists(filepath):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Disposition", f'attachment; filename="{safe_name}"')
+                self.send_header("Content-Length", str(os.path.getsize(filepath)))
+                self.end_headers()
+                with open(filepath, "rb") as f:
+                    while chunk := f.read(65536):
+                        self.wfile.write(chunk)
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        elif parsed.path == "/status":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            recent = []
+            if os.path.exists(DOWNLOAD_DIR):
+                files = [f for f in os.listdir(DOWNLOAD_DIR) if f != "Send" and os.path.isfile(os.path.join(DOWNLOAD_DIR, f))]
+                files.sort(key=lambda x: os.path.getmtime(os.path.join(DOWNLOAD_DIR, x)), reverse=True)
+                for f in files[:5]:
+                    sz = os.path.getsize(os.path.join(DOWNLOAD_DIR, f))
+                    sz_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.1f} MB"
+                    recent.append({"name": f, "size": sz_str})
+
+            data = {
+                "ok": True,
+                "ip": get_local_ip(),
+                "port": PORT,
+                "url": f"http://{get_local_ip()}:{PORT}",
+                "qr_path": QR_PATH,
+                "download_dir": DOWNLOAD_DIR,
+                "recent_files": recent
+            }
+            self.wfile.write(json.dumps(data).encode("utf-8"))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def do_POST(self):
+        if self.path == "/upload":
+            content_type = self.headers.get('Content-Type', '')
+            content_length = int(self.headers.get('Content-Length', 0))
+
+            if not content_type.startswith('multipart/form-data') or content_length == 0:
+                self.send_response(400)
+                self.end_headers()
+                return
+
+            saved = parse_multipart(self.rfile, content_type, content_length, DOWNLOAD_DIR)
+
+            if saved:
+                count = len(saved)
+                summary = f"📥 OmaDrop: {count} ny fil" if count == 1 else f"📥 OmaDrop: {count} nya filer"
+                body = ", ".join(saved[:3])
+                if count > 3:
+                    body += f" (+{count - 3} till)"
+                try:
+                    subprocess.run(["notify-send", summary, body, "--icon=folder-download", "-a", "OmaDrop"], check=False)
+                except Exception:
+                    pass
+
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"ok": True, "saved": saved}).encode("utf-8"))
+
+def cmd_server():
+    ip = get_local_ip()
+    url = f"http://{ip}:{PORT}"
+    generate_qr(url)
+    with open(PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    
+    server = HTTPServer(("0.0.0.0", PORT), OmaDropHandler)
+    server.serve_forever()
+
+def cmd_start():
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE) as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 0)
+            print("OmaDrop is already running.")
+            return
+        except Exception:
+            pass
+    
+    # Run server in background
+    cmd = [sys.executable, os.path.abspath(__file__), "server"]
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    time.sleep(0.3)
+    print("OmaDrop started.")
+
+def cmd_stop():
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE) as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 9)
+            os.remove(PID_FILE)
+            print("OmaDrop stopped.")
+            return
+        except Exception:
+            pass
+    subprocess.run(["pkill", "-f", "omarchy-omadrop server"], check=False)
+    print("OmaDrop stopped.")
+
+def cmd_status():
+    ip = get_local_ip()
+    url = f"http://{ip}:{PORT}"
+    is_running = False
+    
+    if os.path.exists(PID_FILE):
+        try:
+            with open(PID_FILE) as f:
+                pid = int(f.read().strip())
+            os.kill(pid, 0)
+            is_running = True
+        except Exception:
+            is_running = False
+
+    if not is_running:
+        # Check if port is open
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(0.2)
+        if s.connect_ex(('127.0.0.1', PORT)) == 0:
+            is_running = True
+        s.close()
+
+    # Generate QR if needed
+    if is_running and not os.path.exists(QR_PATH):
+        generate_qr(url)
+
+    recent = []
+    if os.path.exists(DOWNLOAD_DIR):
+        files = [f for f in os.listdir(DOWNLOAD_DIR) if f != "Send" and os.path.isfile(os.path.join(DOWNLOAD_DIR, f))]
+        files.sort(key=lambda x: os.path.getmtime(os.path.join(DOWNLOAD_DIR, x)), reverse=True)
+        for f in files[:5]:
+            sz = os.path.getsize(os.path.join(DOWNLOAD_DIR, f))
+            sz_str = f"{sz / 1024:.1f} KB" if sz < 1024*1024 else f"{sz / (1024*1024):.1f} MB"
+            recent.append({"name": f, "size": sz_str})
+
+    data = {
+        "running": is_running,
+        "ip": ip,
+        "port": PORT,
+        "url": url,
+        "qr_path": QR_PATH,
+        "download_dir": DOWNLOAD_DIR,
+        "recent_files": recent
+    }
+    print(json.dumps(data))
+
+def cmd_open():
+    subprocess.run(["xdg-open", DOWNLOAD_DIR], check=False)
+
+if __name__ == "__main__":
+    action = sys.argv[1] if len(sys.argv) > 1 else "status"
+    if action == "server":
+        cmd_server()
+    elif action == "start":
+        cmd_start()
+    elif action == "stop":
+        cmd_stop()
+    elif action == "status":
+        cmd_status()
+    elif action == "open":
+        cmd_open()
+    else:
+        print("Usage: omarchy-omadrop [server | start | stop | status | open]")
