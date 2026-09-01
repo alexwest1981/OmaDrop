@@ -3,6 +3,8 @@
 
 Transfer photos, videos, and files between your smartphone (iPhone or Android) and your Linux PC with **zero apps to install on your mobile device**!
 
+![OmaDrop Preview Screenshot](./screenshot.png)
+
 ---
 
 ## ✨ Features
